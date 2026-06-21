@@ -5,8 +5,8 @@ from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QPainterPath
 from PyQt6.QtCore import Qt, QPoint, QTimer
 
 # Import our custom status indicator pill
-from gui.orb import AnimatedOrb
-from gui.waveform import WaveformVisualizer
+from friday.ui.orb import AnimatedOrb
+from friday.ui.waveform import WaveformVisualizer
 
 class PillWidget(QWidget):
     def __init__(self, parent=None):
@@ -88,7 +88,7 @@ class PillWidget(QWidget):
 
     def set_state_metadata(self, state_str: str):
         try:
-            from gui.states import FridayState, STATE_META
+            from friday.ui.states import FridayState, STATE_META
             target_str = state_str.upper()
             if target_str == "HEARING":
                 target_str = "LISTENING"

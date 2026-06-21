@@ -2,7 +2,7 @@ import math
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QPainter, QColor, QBrush, QPen, QRadialGradient, QPainterPath
 from PyQt6.QtCore import QTimer, Qt, QRectF, QPointF, pyqtProperty, QPropertyAnimation, QEasingCurve, QVariantAnimation
-from gui.states import FridayState, STATE_META
+from friday.ui.states import FridayState, STATE_META
 
 class AnimatedOrb(QWidget):
     def __init__(self, parent=None):

@@ -3,7 +3,7 @@ import random
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QPainter, QColor, QBrush
 from PyQt6.QtCore import QTimer, Qt, QRectF, QVariantAnimation
-from gui.states import FridayState, STATE_META
+from friday.ui.states import FridayState, STATE_META
 
 class WaveformVisualizer(QWidget):
     def __init__(self, parent=None):

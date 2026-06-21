@@ -71,7 +71,7 @@ def auto_build_tool(task: str) -> str:
         code_body = re.sub(r"```(?:python)?\n?", "", code_body).strip()
 
     # Step 3: Safety check
-    from tools.self_modify import BLOCKED_PATTERNS, TOOL_TEMPLATE
+    from friday.skills.self_modify import BLOCKED_PATTERNS, TOOL_TEMPLATE
     for pattern in BLOCKED_PATTERNS:
         if pattern in code_body:
             return f"Generated code blocked — contains disallowed pattern '{pattern}'."

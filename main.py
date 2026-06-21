@@ -101,6 +101,35 @@ from friday.core.intent_router import route_intent
 from friday.core.command_executor import execute_system_command
 from friday.core.llm_agent import get_simple_response, run_complex_agent
 
+# Smart Startup Greeting
+def get_smart_greeting() -> str:
+    import datetime
+    
+    now = datetime.datetime.now()
+    hour = now.hour
+    if hour < 12:
+        tod = "morning"
+    elif hour < 17:
+        tod = "afternoon"
+    else:
+        tod = "evening"
+        
+    greeting = f"Good {tod}, Zahid. Friday is online."
+    
+    try:
+        from friday.skills.weather_checker import get_tool
+        weather_tool = get_tool()
+        weather_info = weather_tool("Delhi")
+        parts = weather_info.split(",")
+        if len(parts) >= 2:
+            weather_desc = parts[0].split(":")[-1].strip()
+            temp = parts[1].strip()
+            greeting += f" Currently in Delhi, it is {weather_desc} at {temp}."
+    except Exception:
+        pass
+        
+    return greeting
+
 # Main interaction loop
 def write():
     conversation_mode = False
@@ -108,7 +137,14 @@ def write():
 
     try:
         with mic as source:
+            logging.info("🎤 Calibrating microphone for ambient noise...")
             recognizer.adjust_for_ambient_noise(source)
+            
+            # Smart Greeting on startup
+            greeting = get_smart_greeting()
+            print("Friday:", greeting)
+            speak_text(greeting)
+            
             while True:
                 try:
                     if not conversation_mode:
@@ -131,6 +167,7 @@ def write():
                             if cmd_after_wake:
                                 logging.info(f"Direct command after wake word: {cmd_after_wake}")
                                 intent, params = route_intent(cmd_after_wake)
+                                res = ""
                                 if intent not in ["simple_q", "complex_task", "idle"]:
                                     res = execute_system_command(intent, params)
                                     print("Friday:", res)
@@ -143,6 +180,14 @@ def write():
                                     res = run_complex_agent(cmd_after_wake)
                                     print("Friday:", res)
                                     speak_text(res)
+                                    
+                                if intent != "idle" and res:
+                                    try:
+                                        from friday.memory.long_term_memory import add_chat_turn
+                                        add_chat_turn("human", cmd_after_wake)
+                                        add_chat_turn("ai", res)
+                                    except Exception:
+                                        pass
                             else:
                                 speak_text("Yes sir?")
                         else:
@@ -161,6 +206,7 @@ def write():
                         intent, params = route_intent(command)
                         logging.info(f"Routed command '{command}' to: {intent}")
                         
+                        res = ""
                         if intent not in ["simple_q", "complex_task", "idle"]:
                             res = execute_system_command(intent, params)
                             print("Friday:", res)
@@ -173,6 +219,14 @@ def write():
                             res = run_complex_agent(command)
                             print("Friday:", res)
                             speak_text(res)
+                            
+                        if intent != "idle" and res:
+                            try:
+                                from friday.memory.long_term_memory import add_chat_turn
+                                add_chat_turn("human", command)
+                                add_chat_turn("ai", res)
+                            except Exception:
+                                pass
                             
                         last_interaction_time = time.time()
 
@@ -199,5 +253,103 @@ def write():
     except Exception as e:
         logging.critical(f"❌ Critical error in main loop: {e}")
 
+def run_gui():
+    import sys
+    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtCore import QObject, pyqtSignal, QTimer
+    
+    # Import Friday UI elements
+    from friday.ui.pill_widget import PillWidget
+    from friday.ui.voice_thread import VoiceThread
+    from friday.ui.tray import SystemTrayIcon
+
+    class HotkeySignaler(QObject):
+        """
+        Listens for a global hotkey event in a background thread 
+        and signals the main thread to toggle widget visibility safely.
+        """
+        hotkey_pressed = pyqtSignal()
+        
+        def __init__(self):
+            super().__init__()
+            try:
+                import keyboard
+                keyboard.add_hotkey("ctrl+space", self.trigger_signal)
+                logging.info("Registered global toggle hotkey: Ctrl + Space")
+            except Exception as e:
+                logging.error(f"Failed to register keyboard hotkey: {e}")
+            
+        def trigger_signal(self):
+            self.hotkey_pressed.emit()
+
+    app = QApplication(sys.argv)
+    
+    # Prevent application from closing when the window is hidden/minimized
+    app.setQuitOnLastWindowClosed(False)
+    
+    # Create the floating pill widget
+    pill = PillWidget()
+    pill.show()
+    
+    # Initialize the Voice Pipeline QThread
+    voice_thread = VoiceThread()
+    
+    # Connect signals from the voice processing thread to UI slots
+    voice_thread.state_changed.connect(pill.update_state)
+    voice_thread.text_updated.connect(pill.update_text)
+    voice_thread.time_elapsed.connect(pill.update_time)
+    
+    # Start the Voice Thread loop
+    voice_thread.start()
+    
+    # Define Tray callbacks
+    def show_friday():
+        # Ensure UI modification runs on Qt main loop thread
+        QTimer.singleShot(0, lambda: (
+            pill.show(),
+            pill.activateWindow(),
+            pill.raise_(),
+            pill.update_state("idle")
+        ))
+        
+    def quit_friday():
+        logging.info("Shutting down Friday assistant...")
+        tray.stop()
+        voice_thread.stop_thread()
+        app.quit()
+        sys.exit(0)
+        
+    # Start System Tray icon
+    tray = SystemTrayIcon(on_show_callback=show_friday, on_quit_callback=quit_friday)
+    tray.run()
+    
+    # Setup global hotkey handler
+    hotkey_signaler = HotkeySignaler()
+    
+    def toggle_visibility():
+        if pill.isVisible():
+            pill.hide()
+        else:
+            pill.show()
+            pill.activateWindow()
+            pill.raise_()
+            pill.update_state("idle")
+            
+    hotkey_signaler.hotkey_pressed.connect(toggle_visibility)
+    
+    # Start Qt event loop
+    sys.exit(app.exec())
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="FRIDAY - Voice-Controlled AI Assistant")
+    parser.add_argument("--cli", action="store_true", help="Run in CLI (console) mode without GUI")
+    args = parser.parse_args()
+
+    if args.cli:
+        write()
+    else:
+        run_gui()
+
 if __name__ == "__main__":
-    write()
+    main()

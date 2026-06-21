@@ -58,4 +58,14 @@ def build_system_prompt() -> str:
                 except Exception as e:
                     logging.error(f"Error loading memory file {filename}: {e}")
                     
+    # 5. Config Rules
+    config_instructions_path = os.path.join(os.path.dirname(base_dir), "config", "instructions.txt")
+    if os.path.exists(config_instructions_path):
+        try:
+            with open(config_instructions_path, "r", encoding="utf-8") as f:
+                prompt_parts.append("# CURRENT ACTIVE BEHAVIOR RULES\n" + f.read().strip())
+        except Exception as e:
+            logging.error(f"Error loading config instructions: {e}")
+                    
     return "\n\n".join(prompt_parts)
+

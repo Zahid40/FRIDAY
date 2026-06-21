@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from langchain_core.tools import BaseTool
 
-TOOLS_DIR = Path(__file__).parent.parent / "tools"
+TOOLS_DIR = Path(__file__).parent / "skills"
 
 _active_tools: list[BaseTool] = []
 _reload_callback = None
@@ -17,7 +17,7 @@ def register_reload_callback(fn):
 
 
 def _load_module(file: Path):
-    module_name = f"tools.{file.stem}"
+    module_name = f"friday.skills.{file.stem}"
     if module_name in sys.modules:
         del sys.modules[module_name]
     spec = importlib.util.spec_from_file_location(module_name, file)

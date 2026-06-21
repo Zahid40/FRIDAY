@@ -8,7 +8,7 @@ import speech_recognition as sr
 from langchain_core.callbacks import BaseCallbackHandler
 
 # Add parent directory to path to import core files
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from friday.core.intent_router import route_intent
 from friday.core.command_executor import execute_system_command
@@ -146,6 +146,15 @@ class VoiceThread(QThread):
 
                 speak_wrapper(response)
 
+            # Save turn to persistent memory
+            if intent != "idle" and response:
+                try:
+                    from friday.memory.long_term_memory import add_chat_turn
+                    add_chat_turn("human", command)
+                    add_chat_turn("ai", response)
+                except Exception:
+                    pass
+
         except Exception as e:
             logging.error(f"Error processing command '{command}': {e}")
             self.change_state("error")
@@ -155,6 +164,19 @@ class VoiceThread(QThread):
 
     def run(self):
         logging.info("Friday Voice Pipeline Thread started.")
+        self.change_state("idle")
+        self.text_updated.emit("Say Friday...")
+
+        # Play smart greeting on startup
+        try:
+            from main import get_smart_greeting
+            greeting = get_smart_greeting()
+            self.change_state("speaking")
+            self.text_updated.emit(greeting)
+            speak_text(greeting)
+        except Exception as e:
+            logging.error(f"Failed to play startup greeting: {e}")
+
         self.change_state("idle")
         self.text_updated.emit("Say Friday...")
 
