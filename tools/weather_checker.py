@@ -8,7 +8,7 @@ def get_tool():
     def weather_checker(query: str) -> str:
         """Returns the current weather for a city or location. Input should be a city name."""
         try:
-            url = f"https://wttr.in/{query}?format=3"
+            url = f"https://wttr.in/{query}?format=%l:+%C,+%t,+feels+like+%f,+humidity+%h,+wind+%w"
             resp = requests.get(url, timeout=6, headers={"User-Agent": "curl/7.68.0"})
             if resp.status_code == 200:
                 return resp.text.strip()

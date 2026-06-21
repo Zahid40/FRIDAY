@@ -2,9 +2,26 @@ import sys
 import os
 import time
 import logging
+import re
 from PyQt6.QtCore import QThread, pyqtSignal
 import speech_recognition as sr
 from langchain_core.callbacks import BaseCallbackHandler
+
+# Add parent directory to path to import core files
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from friday.core.intent_router import route_intent
+from friday.core.command_executor import execute_system_command
+from friday.core.llm_agent import get_simple_response, run_complex_agent
+
+from main import (
+    recognizer,
+    mic,
+    transcribe_audio,
+    speak_text,
+    TRIGGER_WORD,
+    CONVERSATION_TIMEOUT
+)
 
 class FridayCallbackHandler(BaseCallbackHandler):
     def __init__(self, voice_thread):
@@ -45,25 +62,10 @@ class FridayCallbackHandler(BaseCallbackHandler):
             return "Entering Matrix mode"
         return name.replace('_', ' ').strip().capitalize()
 
-# Add the parent directory to python path to import main components
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from main import (
-    recognizer,
-    mic,
-    transcribe_audio,
-    speak_text,
-    executor,
-    handle_system_command,
-    TRIGGER_WORD,
-    CONVERSATION_TIMEOUT
-)
-
 class VoiceThread(QThread):
-    # Signals to communicate with GUI main thread
-    state_changed = pyqtSignal(str)     # E.g. "idle", "listening", "speaking"
+    state_changed = pyqtSignal(str)     # "idle", "listening", "speaking", etc.
     text_updated = pyqtSignal(str)      # Subtitle/status text
-    time_elapsed = pyqtSignal(int)      # Seconds elapsed during speaking/active state
+    time_elapsed = pyqtSignal(int)      # Running active session timer
 
     def __init__(self):
         super().__init__()
@@ -77,6 +79,79 @@ class VoiceThread(QThread):
     def change_state(self, state: str):
         self.current_state = state
         self.state_changed.emit(state)
+
+    def process_command(self, command: str):
+        """Processes voice command using the Two-Brain local routing architecture."""
+        if not command or not command.strip():
+            return
+
+        self.text_updated.emit(f"Heard: {command}")
+        self.last_interaction_time = time.time()
+
+        # Speak wrapper updating state and displaying text in the UI
+        def speak_wrapper(text_to_speak):
+            self.change_state("speaking")
+            self.text_updated.emit(text_to_speak)
+            speak_text(text_to_speak)
+
+        try:
+            # 1. Fast Pattern Matching (Intent Router)
+            intent, params = route_intent(command)
+            logging.info(f"Routed command '{command}' -> Intent: {intent}")
+
+            # Direct execution for system commands
+            if intent not in ["simple_q", "complex_task", "idle"]:
+                self.change_state("executing")
+                self.text_updated.emit("Executing...")
+                
+                response = execute_system_command(intent, params)
+                
+                self.change_state("success")
+                self.text_updated.emit("Success")
+                time.sleep(1.0)
+                
+                speak_wrapper(response)
+
+            # Direct Q&A via fast local model (Qwen 0.5B)
+            elif intent == "simple_q":
+                self.change_state("thinking")
+                self.text_updated.emit("Thinking...")
+                
+                response = get_simple_response(command)
+                
+                self.change_state("success")
+                self.text_updated.emit("Success")
+                time.sleep(1.0)
+                
+                speak_wrapper(response)
+
+            # Complex tasks using agent executor (Qwen 8B)
+            elif intent == "complex_task":
+                lower_cmd = command.lower()
+                initial_state = "thinking"
+                if any(x in lower_cmd for x in ["plan", "schedule", "calendar"]):
+                    initial_state = "planning"
+                elif any(x in lower_cmd for x in ["write", "type", "draft", "email"]):
+                    initial_state = "typing"
+
+                self.change_state(initial_state)
+                self.text_updated.emit("Thinking...")
+
+                handler = FridayCallbackHandler(self)
+                response = run_complex_agent(command, callbacks=[handler])
+
+                self.change_state("success")
+                self.text_updated.emit("Success")
+                time.sleep(1.0)
+
+                speak_wrapper(response)
+
+        except Exception as e:
+            logging.error(f"Error processing command '{command}': {e}")
+            self.change_state("error")
+            self.text_updated.emit("Error")
+            time.sleep(1.0)
+            speak_wrapper("Error executing command.")
 
     def run(self):
         logging.info("Friday Voice Pipeline Thread started.")
@@ -104,12 +179,23 @@ class VoiceThread(QThread):
                                 logging.info(f"Idle heard: {transcript}")
                                 if TRIGGER_WORD.lower() in transcript.lower():
                                     self.start_timer()
-                                    self.change_state("wake")
-                                    self.text_updated.emit("Yes?")
-                                    speak_text("Yes?")
+                                    
+                                    # Extract direct command spoken with/after wake word
+                                    wake_idx = transcript.lower().find(TRIGGER_WORD.lower())
+                                    cmd_after_wake = transcript[wake_idx + len(TRIGGER_WORD):].strip()
+                                    cmd_after_wake = re.sub(r"^[,\s\-\.]+", "", cmd_after_wake).strip()
                                     
                                     self.conversation_mode = True
                                     self.last_interaction_time = time.time()
+                                    
+                                    if cmd_after_wake:
+                                        logging.info(f"Direct command after wake word: {cmd_after_wake}")
+                                        self.process_command(cmd_after_wake)
+                                    else:
+                                        # Standard wake response
+                                        self.change_state("wake")
+                                        self.text_updated.emit("Yes?")
+                                        speak_text("Yes?")
                         except sr.WaitTimeoutError:
                             continue
                         except Exception as e:
@@ -119,6 +205,9 @@ class VoiceThread(QThread):
                         # In active conversation loop
                         self.change_state("listening")
                         self.text_updated.emit("Listening...")
+                        
+                        # Wait 300ms buffer after previous voice output to prevent echo / overlap
+                        time.sleep(0.3)
 
                         try:
                             audio = recognizer.listen(source, timeout=3, phrase_time_limit=10)
@@ -130,56 +219,7 @@ class VoiceThread(QThread):
                                     self.conversation_mode = False
                                 continue
 
-                            self.text_updated.emit(f"Heard: {command}")
-                            self.last_interaction_time = time.time()
-
-                            # Custom speak wrapper to handle speaking states
-                            def speak_wrapper(text_to_speak):
-                                self.change_state("speaking")
-                                self.text_updated.emit(text_to_speak)
-                                speak_text(text_to_speak)
-
-                            # Intercept and run system controls
-                            is_system_cmd = handle_system_command(command, speak_fn=speak_wrapper)
-                            
-                            if is_system_cmd:
-                                # Command executed successfully. Show SUCCESS state!
-                                self.change_state("success")
-                                self.text_updated.emit("Success")
-                                time.sleep(1.0)
-                            else:
-                                # Determine initial state based on keywords
-                                lower_cmd = command.lower()
-                                initial_state = "thinking"
-                                if any(x in lower_cmd for x in ["plan", "schedule", "calendar"]):
-                                    initial_state = "planning"
-                                elif any(x in lower_cmd for x in ["write", "type", "draft", "email"]):
-                                    initial_state = "typing"
-                                
-                                self.change_state(initial_state)
-                                self.text_updated.emit("Thinking...")
-                                
-                                try:
-                                    handler = FridayCallbackHandler(self)
-                                    response = executor.invoke(
-                                        {"input": command},
-                                        {"callbacks": [handler]}
-                                    )
-                                    content = response["output"]
-                                    
-                                    # Show success flash
-                                    self.change_state("success")
-                                    self.text_updated.emit("Success")
-                                    time.sleep(1.0)
-                                    
-                                    speak_wrapper(content)
-                                except Exception as agent_err:
-                                    logging.error(f"Local agent query failed: {agent_err}")
-                                    self.change_state("error")
-                                    self.text_updated.emit("Error")
-                                    time.sleep(1.0)
-                                    speak_wrapper("Offline. Please check if Ollama is running.")
-
+                            self.process_command(command)
                             self.last_interaction_time = time.time()
 
                         except sr.WaitTimeoutError:
@@ -199,7 +239,6 @@ class VoiceThread(QThread):
         self.active_timer = 0
         self.timer_running = True
         self.time_elapsed.emit(self.active_timer)
-        # We handle seconds counter inside a simple sleep loop in this thread
         self.start_timer_thread()
 
     def stop_timer(self):
@@ -207,7 +246,6 @@ class VoiceThread(QThread):
         self.active_timer = 0
 
     def start_timer_thread(self):
-        # Starts a simple loop running every second to count active session length
         def run_timer():
             while self.timer_running and self.running:
                 time.sleep(1)
