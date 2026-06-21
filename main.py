@@ -1,10 +1,13 @@
 import os
 import logging
 import time
-import pyttsx3
+import tempfile
 from dotenv import load_dotenv
 import speech_recognition as sr
 from langchain_ollama import ChatOllama, OllamaLLM
+from kokoro import KPipeline
+import sounddevice as sd
+from faster_whisper import WhisperModel
 
 # from langchain_openai import ChatOpenAI # if you want to use openai
 from langchain_core.messages import HumanMessage
@@ -22,7 +25,7 @@ from tools.screenshot import take_screenshot
 load_dotenv()
 
 MIC_INDEX = None
-TRIGGER_WORD = "jarvis"
+TRIGGER_WORD = "friday"
 CONVERSATION_TIMEOUT = 30  # seconds of inactivity before exiting conversation mode
 
 logging.basicConfig(level=logging.DEBUG)  # logging
@@ -32,6 +35,48 @@ logging.basicConfig(level=logging.DEBUG)  # logging
 
 recognizer = sr.Recognizer()
 mic = sr.Microphone(device_index=MIC_INDEX)
+
+# Initialize TTS and STT models
+try:
+    logging.info("⏳ Loading Kokoro TTS pipeline...")
+    kokoro_pipeline = KPipeline(lang_code='a')
+except Exception as e:
+    logging.error(f"❌ Failed to load Kokoro Pipeline: {e}")
+    kokoro_pipeline = None
+
+try:
+    logging.info("⏳ Loading Whisper STT model...")
+    whisper_model = WhisperModel("small.en", device="cpu", compute_type="int8")
+except Exception as e:
+    logging.error(f"❌ Failed to load Whisper Model: {e}")
+    whisper_model = None
+
+def transcribe_audio(audio_data) -> str:
+    if whisper_model is None:
+        logging.error("❌ Whisper model is not loaded. Cannot transcribe.")
+        return ""
+    
+    try:
+        # Convert AudioData to WAV format bytes
+        wav_bytes = audio_data.get_wav_data()
+        
+        # Write to a temporary file
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(wav_bytes)
+            temp_path = f.name
+        
+        try:
+            # Transcribe using faster-whisper
+            segments, _ = whisper_model.transcribe(temp_path)
+            transcript = " ".join([s.text for s in segments])
+            return transcript.strip()
+        finally:
+            # Ensure the temporary file is deleted
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+    except Exception as e:
+        logging.error(f"❌ Transcription failed: {e}")
+        return ""
 
 # Initialize LLM
 llm = ChatOllama(model="qwen3:1.7b", reasoning=False)
@@ -46,7 +91,7 @@ prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are Jarvis, an intelligent, conversational AI assistant. Your goal is to be helpful, friendly, and informative. You can respond in natural, human-like language and use tools when needed to answer questions more accurately. Always explain your reasoning simply when appropriate, and keep your responses conversational and concise.",
+            "You are Friday, an intelligent, conversational AI assistant. Your goal is to be helpful, friendly, and informative. You can respond in natural, human-like language and use tools when needed to answer questions more accurately. Always explain your reasoning simply when appropriate, and keep your responses conversational and concise.",
         ),
         ("human", "{input}"),
         ("placeholder", "{agent_scratchpad}"),
@@ -58,19 +103,17 @@ agent = create_tool_calling_agent(llm=llm, tools=tools, prompt=prompt)
 executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 
-# TTS setup
+# TTS setup using Kokoro
 def speak_text(text: str):
     try:
-        engine = pyttsx3.init()
-        for voice in engine.getProperty("voices"):
-            if "jamie" in voice.name.lower():
-                engine.setProperty("voice", voice.id)
-                break
-        engine.setProperty("rate", 180)
-        engine.setProperty("volume", 1.0)
-        engine.say(text)
-        engine.runAndWait()
-        time.sleep(0.3)
+        if kokoro_pipeline is None:
+            logging.error("❌ Kokoro TTS pipeline not initialized.")
+            return
+        
+        generator = kokoro_pipeline(text, voice='af_heart', speed=1.0)
+        for _, _, audio in generator:
+            sd.play(audio, samplerate=24000)
+            sd.wait()
     except Exception as e:
         logging.error(f"❌ TTS failed: {e}")
 
@@ -88,10 +131,10 @@ def write():
                     if not conversation_mode:
                         logging.info("🎤 Listening for wake word...")
                         audio = recognizer.listen(source, timeout=10)
-                        transcript = recognizer.recognize_google(audio)
+                        transcript = transcribe_audio(audio)
                         logging.info(f"🗣 Heard: {transcript}")
 
-                        if TRIGGER_WORD.lower() in transcript.lower():
+                        if transcript and TRIGGER_WORD.lower() in transcript.lower():
                             logging.info(f"🗣 Triggered by: {transcript}")
                             speak_text("Yes sir?")
                             conversation_mode = True
@@ -101,7 +144,7 @@ def write():
                     else:
                         logging.info("🎤 Listening for next command...")
                         audio = recognizer.listen(source, timeout=10)
-                        command = recognizer.recognize_google(audio)
+                        command = transcribe_audio(audio)
                         logging.info(f"📥 Command: {command}")
 
                         logging.info("🤖 Sending command to agent...")
@@ -109,7 +152,7 @@ def write():
                         content = response["output"]
                         logging.info(f"✅ Agent responded: {content}")
 
-                        print("Jarvis:", content)
+                        print("Friday:", content)
                         speak_text(content)
                         last_interaction_time = time.time()
 

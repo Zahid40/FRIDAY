@@ -6,7 +6,7 @@ langchain-openai==0.3.28
 ollama==0.5.1
 openai==1.97.0
 python-dotenv==1.1.1
-pyttsx3==2.99
+# pyttsx3==2.99
 pytz==2025.2
 SpeechRecognition==3.14.3
 PyAudio==0.2.14
@@ -15,3 +15,9 @@ PyAudio==0.2.14
 mss==10.0.0
 duckduckgo-search==8.1.1
 pytesseract==0.3.13
+
+# Offline TTS & STT packages
+kokoro>=0.1.0
+soundfile
+sounddevice
+faster-whisper

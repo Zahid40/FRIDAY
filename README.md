@@ -1,12 +1,12 @@
-# 🧠 Jarvis – Local Voice-Controlled AI Assistant
+# 🧠 Friday – Local Voice-Controlled AI Assistant
 
-**Jarvis** is a voice-activated, conversational AI assistant powered by a local LLM (Qwen via Ollama). It listens for a wake word, processes spoken commands using a local language model with LangChain, and responds out loud via TTS. It supports tool-calling for dynamic functions like checking the current time.
+**Friday** is a voice-activated, conversational AI assistant powered by a local LLM (Qwen via Ollama). It listens for a wake word, processes spoken commands using a local language model with LangChain, and responds out loud via TTS. It supports tool-calling for dynamic functions like checking the current time.
 
 ---
 
 ## 🚀 Features
 
-- 🗣 Voice-activated with wake word **"Jarvis"**
+- 🗣 Voice-activated with wake word **"Friday"**
 - 🧠 Local language model (Qwen 3 via Ollama)
 - 🔧 Tool-calling with LangChain
 - 🔊 Text-to-speech responses via `pyttsx3`
@@ -24,7 +24,7 @@
 
 2. **Wake Word Listening**
    - Listens via microphone (e.g., `device_index=0`)
-   - If it hears the word **"Jarvis"**, it enters "conversation mode"
+   - If it hears the word **"Friday"**, it enters "conversation mode"
 
 3. **Voice Command Handling**
    - Records the user’s spoken command
@@ -36,7 +36,7 @@
 
 ---
 
-## 🤖 How To Start Jarvis
+## 🤖 How To Start Friday
 
 1. **Install Dependencies**  
    Make sure you have installed all required dependencies listed in `requirements.txt`:
@@ -47,7 +47,7 @@
 2. **Set Up the Local Model**  
    Ensure you have the `qwen3:1.7b` model available in Ollama.
 
-3. **Run Jarvis**  
+3. **Run Friday**  
    Start the assistant by running:
    ```bash
    python main.py
