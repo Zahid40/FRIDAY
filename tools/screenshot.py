@@ -3,7 +3,7 @@ import os
 import mss
 import mss.tools
 
-@tool("capture_screenshot", return_direct=True)
+@tool("capture_screenshot")
 def take_screenshot() -> str:
     """
     Captures the current screen and saves it to '~/path/to/example.png' using the 'mss' library.
@@ -14,14 +14,15 @@ def take_screenshot() -> str:
     - "Save a screenshot"
     """
     try:
-        image_path = os.path.expanduser("~/path/to/example.png")
-        os.makedirs(os.path.dirname(image_path), exist_ok=True)
+        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        os.makedirs(desktop_path, exist_ok=True)
+        image_path = os.path.join(desktop_path, "screenshot.png")
 
         with mss.mss() as sct:
             monitor = sct.monitors[1]  # [1] = main monitor; [0] = all monitors
             screenshot = sct.grab(monitor)
             mss.tools.to_png(screenshot.rgb, screenshot.size, output=image_path)
 
-        return f"Screenshot captured and saved sir."
+        return f"Screenshot captured and saved to Desktop."
     except Exception as e:
         return f"Failed to capture screenshot: {str(e)}"

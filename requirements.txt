@@ -21,3 +21,11 @@ kokoro>=0.1.0
 soundfile
 sounddevice
 faster-whisper
+
+# System control dependencies
+pyautogui
+keyboard
+
+# GUI & System Tray dependencies
+PyQt6
+pystray

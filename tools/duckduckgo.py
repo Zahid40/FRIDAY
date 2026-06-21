@@ -1,7 +1,7 @@
 from langchain.tools import tool
 from duckduckgo_search import DDGS
 
-@tool("duckduckgo_search", return_direct=True)
+@tool("duckduckgo_search")
 def duckduckgo_search_tool(query: str) -> str:
     """
     Perform a web search using DuckDuckGo and return the top result.
@@ -16,15 +16,13 @@ def duckduckgo_search_tool(query: str) -> str:
     - A natural language query string.
     """
     with DDGS() as ddgs:
-        results = ddgs.text(query, region='wt-wt', safesearch='Moderate', max_results=1)
+        results = ddgs.text(query, region='wt-wt', safesearch='Moderate', max_results=3)
         results_list = list(results)
 
     if not results_list:
-        return f"Apologies, I couldn't find any results for: \"{query}\"."
+        return f"No results found for: \"{query}\"."
 
-    top = results_list[0]
-    return (
-        f"Certainly sir, here's the top result for: \"{query}\"\n\n"
-        f"🔹 Title: {top['title']}\n"
-        f"🔗 URL: {top['href']}\n"
-    )
+    output = f"Search results for: \"{query}\"\n\n"
+    for r in results_list:
+        output += f"Title: {r['title']}\nURL: {r['href']}\nSummary: {r.get('body', 'N/A')}\n\n"
+    return output.strip()

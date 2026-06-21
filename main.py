@@ -2,6 +2,7 @@ import os
 import logging
 import time
 import tempfile
+import re
 from dotenv import load_dotenv
 import speech_recognition as sr
 from langchain_ollama import ChatOllama, OllamaLLM
@@ -13,14 +14,11 @@ from faster_whisper import WhisperModel
 from langchain_core.messages import HumanMessage
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate
+from langchain.memory import ConversationBufferWindowMemory
 
-# importing tools
-from tools.time import get_time
-from tools.OCR import read_text_from_latest_image
-from tools.arp_scan import arp_scan_terminal
-from tools.duckduckgo import duckduckgo_search_tool
-from tools.matrix import matrix_mode
-from tools.screenshot import take_screenshot
+from system_control import handle_system_command
+from friday.character.loader import build_system_prompt
+from friday.tool_manager import load_all_tools, register_reload_callback
 
 load_dotenv()
 
@@ -51,6 +49,22 @@ except Exception as e:
     logging.error(f"❌ Failed to load Whisper Model: {e}")
     whisper_model = None
 
+def strip_markdown(text: str) -> str:
+    # Remove markdown headers
+    text = re.sub(r'#+\s+', '', text)
+    # Remove bold/italic asterisks and underscores
+    text = re.sub(r'\*+', '', text)
+    text = re.sub(r'_+', '', text)
+    # Remove code blocks and backticks
+    text = re.sub(r'`+', '', text)
+    # Remove HTML tags
+    text = re.sub(r'<[^>]*>', '', text)
+    # Remove list bullet symbols at the start of lines
+    text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)
+    # Remove numbering like "1. ", "2. "
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+    return text.strip()
+
 def transcribe_audio(audio_data) -> str:
     if whisper_model is None:
         logging.error("❌ Whisper model is not loaded. Cannot transcribe.")
@@ -66,8 +80,18 @@ def transcribe_audio(audio_data) -> str:
             temp_path = f.name
         
         try:
-            # Transcribe using faster-whisper
-            segments, _ = whisper_model.transcribe(temp_path)
+            # Transcribe using faster-whisper with VAD activity filtering
+            segments, _ = whisper_model.transcribe(
+                temp_path,
+                beam_size=5,
+                language="en",
+                vad_filter=True,
+                vad_parameters=dict(
+                    threshold=0.3,
+                    min_silence_duration_ms=300,
+                    speech_pad_ms=400,
+                )
+            )
             transcript = " ".join([s.text for s in segments])
             return transcript.strip()
         finally:
@@ -79,28 +103,74 @@ def transcribe_audio(audio_data) -> str:
         return ""
 
 # Initialize LLM
-llm = ChatOllama(model="qwen3:1.7b", reasoning=False)
+llm = ChatOllama(model="qwen3:8b", reasoning=False)
 
 # llm = ChatOpenAI(model="gpt-4o-mini", api_key=api_key, organization=org_id) for openai
 
-# Tool list
-tools = [get_time, arp_scan_terminal, read_text_from_latest_image, duckduckgo_search_tool, matrix_mode, take_screenshot]
+# Tool list — auto-discovered from tools/
+tools = load_all_tools()
 
 # Tool-calling prompt
 prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are Friday, an intelligent, conversational AI assistant. Your goal is to be helpful, friendly, and informative. You can respond in natural, human-like language and use tools when needed to answer questions more accurately. Always explain your reasoning simply when appropriate, and keep your responses conversational and concise.",
+            build_system_prompt(),
         ),
+        (
+            "system",
+            "IMPORTANT personality override: You are FRIDAY. You must be calm, minimal, and direct. Keep voice answers under 2 short sentences. Do not use emojis, exclamation marks, or polite phrases like 'Certainly!', 'Great question!', or 'Sure!'."
+        ),
+        ("placeholder", "{chat_history}"),
         ("human", "{input}"),
         ("placeholder", "{agent_scratchpad}"),
     ]
 )
 
+# Conversation memory (last 6 turns)
+memory = ConversationBufferWindowMemory(
+    k=6, memory_key="chat_history", return_messages=True
+)
+
 # Agent + executor
 agent = create_tool_calling_agent(llm=llm, tools=tools, prompt=prompt)
-executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    verbose=True,
+    max_iterations=6,
+    early_stopping_method="generate",
+    memory=memory,
+)
+
+
+def rebuild_agent(new_tools):
+    global agent, executor, tools
+    tools = new_tools
+    agent = create_tool_calling_agent(llm=llm, tools=tools, prompt=prompt)
+    executor = AgentExecutor(
+        agent=agent,
+        tools=tools,
+        verbose=True,
+        max_iterations=6,
+        early_stopping_method="generate",
+        memory=memory,
+    )
+    logging.info(f"Agent rebuilt with {len(tools)} tools.")
+
+
+register_reload_callback(rebuild_agent)
+
+FAILURE_PHRASES = [
+    "i can't", "i cannot", "i'm unable", "unable to",
+    "don't have the ability", "not able to", "no tool",
+    "i don't have access", "i have no way", "i'm not able",
+    "can't do that", "cannot do that",
+]
+
+def looks_like_failure(text: str) -> bool:
+    t = text.lower()
+    return any(p in t for p in FAILURE_PHRASES)
 
 
 # TTS setup using Kokoro
@@ -110,10 +180,16 @@ def speak_text(text: str):
             logging.error("❌ Kokoro TTS pipeline not initialized.")
             return
         
-        generator = kokoro_pipeline(text, voice='af_heart', speed=1.0)
+        # Clean any markdown tags before speaking
+        cleaned_text = strip_markdown(text)
+        if not cleaned_text:
+            return
+            
+        generator = kokoro_pipeline(cleaned_text, voice='af_heart', speed=1.0)
         for _, _, audio in generator:
             sd.play(audio, samplerate=24000)
             sd.wait()
+        time.sleep(0.4)  # Small pause to clear room echo before next microphone listen
     except Exception as e:
         logging.error(f"❌ TTS failed: {e}")
 
@@ -147,13 +223,34 @@ def write():
                         command = transcribe_audio(audio)
                         logging.info(f"📥 Command: {command}")
 
-                        logging.info("🤖 Sending command to agent...")
-                        response = executor.invoke({"input": command})
-                        content = response["output"]
-                        logging.info(f"✅ Agent responded: {content}")
+                        if not command or not command.strip():
+                            logging.warning("⚠️ Command is empty, skipping.")
+                            continue
 
-                        print("Friday:", content)
-                        speak_text(content)
+                        # Intercept and handle system commands offline
+                        is_system_cmd = handle_system_command(command, speak_fn=speak_text)
+                        if not is_system_cmd:
+                            logging.info("🤖 Sending command to agent...")
+                            response = executor.invoke({"input": command})
+                            content = response["output"]
+
+                            # If FRIDAY failed, auto-build a tool and retry
+                            if looks_like_failure(content):
+                                logging.info("🔧 Failure detected — triggering auto-build...")
+                                speak_text("Let me build that.")
+                                executor.invoke({
+                                    "input": (
+                                        f"Use auto_build_tool to research and build "
+                                        f"the capability needed for this task: {command}"
+                                    )
+                                })
+                                # Retry original command on the rebuilt executor
+                                response = executor.invoke({"input": command})
+                                content = response["output"]
+
+                            logging.info(f"✅ Agent responded: {content}")
+                            print("Friday:", content)
+                            speak_text(content)
                         last_interaction_time = time.time()
 
                         if time.time() - last_interaction_time > CONVERSATION_TIMEOUT:

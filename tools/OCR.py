@@ -3,7 +3,7 @@ from PIL import Image
 import pytesseract
 import os
 
-@tool("read_latest_screenshot", return_direct=True)
+@tool("read_latest_screenshot")
 def read_text_from_latest_image() -> str:
     """
     Reads and extracts text from the most recent screenshot located at '~/path/to/example.png'.
@@ -12,10 +12,11 @@ def read_text_from_latest_image() -> str:
     - "What does the screenshot say?"
     - "Extract text from the image"
     """
-    image_path = os.path.expanduser("~/path/to/example.png")
+    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+    image_path = os.path.join(desktop_path, "screenshot.png")
 
     if not os.path.exists(image_path):
-        return "Screenshot not found at ./path/to/example.png."
+        return f"Screenshot not found at {image_path}."
 
     try:
         img = Image.open(image_path)

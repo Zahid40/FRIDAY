@@ -5,7 +5,7 @@ import tempfile
 import sys
 import shutil
 
-@tool("matrix_mode", return_direct=True)
+@tool("matrix_mode")
 def matrix_mode() -> str:
     """
     Opens a new terminal window and runs the cmatrix command to enter 'Matrix Mode'.

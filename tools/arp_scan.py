@@ -2,7 +2,7 @@ from langchain.tools import tool
 import subprocess
 import platform
 
-@tool("arp_scan_terminal", return_direct=True)
+@tool("arp_scan_terminal")
 def arp_scan_terminal() -> str:
     """
     Runs 'arp -a' in a new Terminal window on macOS.
