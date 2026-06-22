@@ -71,10 +71,10 @@ def auto_build_tool(task: str) -> str:
         code_body = re.sub(r"```(?:python)?\n?", "", code_body).strip()
 
     # Step 3: Safety check
-    from friday.skills.self_modify import BLOCKED_PATTERNS, TOOL_TEMPLATE
-    for pattern in BLOCKED_PATTERNS:
-        if pattern in code_body:
-            return f"Generated code blocked — contains disallowed pattern '{pattern}'."
+    from friday.skills.self_modify import TOOL_TEMPLATE, is_safe_code
+    is_safe, safety_message = is_safe_code(code_body)
+    if not is_safe:
+        return f"Generated code blocked: {safety_message}"
 
     # Step 4: Build file
     func_name = re.sub(r"[^\w]", "_", task.lower()[:30].strip())

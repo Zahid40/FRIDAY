@@ -8,15 +8,20 @@ def _initialize_memory():
     if not MEMORY_FILE.exists():
         MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-            json.dump({"chat_history": [], "user_facts": []}, f, indent=4)
+            json.dump({"chat_history": [], "user_facts": [], "repair_notes": []}, f, indent=4)
 
 def load_memory() -> dict:
     _initialize_memory()
     try:
         with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except Exception:
-        return {"chat_history": [], "user_facts": []}
+        data = {"chat_history": [], "user_facts": [], "repair_notes": []}
+
+    data.setdefault("chat_history", [])
+    data.setdefault("user_facts", [])
+    data.setdefault("repair_notes", [])
+    return data
 
 def save_memory(data: dict):
     _initialize_memory()
@@ -68,3 +73,49 @@ def search_user_facts(query: str) -> list:
         if any(kw in fact_lower for kw in keywords):
             matched.append(fact)
     return matched
+
+def add_repair_note(problem: str, fix: str, context: str = "", max_notes: int = 50) -> str:
+    data = load_memory()
+    notes = data.get("repair_notes", [])
+
+    note = {
+        "problem": problem.strip(),
+        "fix": fix.strip(),
+        "context": context.strip(),
+    }
+
+    if not note["problem"] or not note["fix"]:
+        return "Repair note needs both a problem and a fix."
+
+    if note not in notes:
+        notes.append(note)
+        if len(notes) > max_notes:
+            notes = notes[-max_notes:]
+        data["repair_notes"] = notes
+        save_memory(data)
+        return "Repair note saved."
+
+    return "Repair note already exists."
+
+def search_repair_notes(query: str) -> list[dict]:
+    data = load_memory()
+    notes = data.get("repair_notes", [])
+    if not query or not query.strip():
+        return notes
+
+    keywords = [kw.lower() for kw in query.split() if len(kw) > 2]
+    if not keywords:
+        return notes
+
+    matches = []
+    for note in notes:
+        haystack = " ".join(
+            [
+                note.get("problem", ""),
+                note.get("fix", ""),
+                note.get("context", ""),
+            ]
+        ).lower()
+        if any(keyword in haystack for keyword in keywords):
+            matches.append(note)
+    return matches

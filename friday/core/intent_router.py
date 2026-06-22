@@ -24,7 +24,7 @@ Classify the user's input: "{text}"
 Supported Intents:
 1. "open_app": User explicitly wants to open, start, or launch an application or website. (e.g. "open Chrome", "launch VS Code", "go to youtube.com").
 2. "simple_q": General question, short greeting, or simple chitchat that does not require system actions or tools (e.g. "hello", "how are you?", "what is the capital of France?").
-3. "complex_task": Any request that requires running tools or local system actions (e.g. weather checks, stock price lookup, sending emails/WhatsApp, writing/running Python scripts, reading/writing clipboard, screenshot, network scans).
+3. "complex_task": Any request that requires running tools or local system actions (e.g. weather checks, stock price lookup, sending emails/WhatsApp, writing/running Python scripts, reading/writing clipboard, screenshot, network scans, clicking, typing, scrolling, pressing keys, or other computer control).
 
 Respond ONLY with a JSON object in this format (no markdown, no quotes, just JSON):
 {{"intent": "intent_name", "param": "associated_app_or_url_if_any"}}"""
@@ -75,7 +75,9 @@ def route_intent(text: str) -> tuple[str, dict]:
         "scan", "network", "arp", "ip address", "matrix", "matrix mode",
         "search", "google", "web", "duckduckgo", "look up", "weather",
         "stock", "share price", "market", "email", "whatsapp", "send a message",
-        "clipboard", "copy", "paste", "write a script", "run code"
+        "clipboard", "copy", "paste", "write a script", "run code",
+        "click", "double click", "right click", "type", "press", "hit enter",
+        "scroll", "mouse", "cursor", "hotkey", "shortcut", "tab key"
     ]
     if any(kw in text_clean for kw in complex_keywords):
         return "complex_task", {"query": text}

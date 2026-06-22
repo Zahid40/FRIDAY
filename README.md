@@ -12,12 +12,14 @@
 - 🔄 **Ollama Intent Routing**: Deterministic regex routing + fast local LLM fallback classification.
 - 🔧 **Advanced Tools**:
   - `Smart Launcher`: Launch VS Code, Chrome, Spotify, etc., or open web URLs.
+  - `Computer Control`: Type text, press keys, use shortcuts, click, scroll, and handle simple GUI actions.
   - `File System Manager`: Create, read, move, list, or delete files/folders by voice.
   - `Communicator`: Send emails via SMTP and open WhatsApp messages with pre-filled text.
   - `Clipboard Manager`: Read, write, and summarize clipboard text.
-  - `Code Runner`: Write and execute Python scripts locally in a scratch directory.
+  - `Code Runner`: Write and execute Python scripts locally, with temporary self-cleaning scripts by default.
   - `Stock Market Checker`: Retrieve real-time prices from Yahoo Finance API.
   - `Weather Checker`: Fetch real-time weather from wttr.in.
+  - `Repair Memory`: Remember failure patterns and successful fixes for future recovery.
 - 🔊 Natural offline Text-to-Speech via **Kokoro TTS**.
 - 🖥 Modern **PyQt6 Floating GUI** styled as a screen-notch/island with real-time waveform audio visualization.
 
